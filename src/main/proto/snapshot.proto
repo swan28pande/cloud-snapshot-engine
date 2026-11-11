@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package snapshot.v1;
+
+option java_multiple_files = true;
+option java_package = "io.github.swan28pande.snapshot.proto";
+
+service SnapshotService {
+  // Read a volume (block device or image file on the server) and store an incremental snapshot.
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (SnapshotInfo);
+  rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
+  // Reassemble a snapshot onto a device or image file on the server.
+  rpc RestoreVolume(RestoreVolumeRequest) returns (RestoreVolumeResponse);
+  // Stream a snapshot's image to the client, for reassembly elsewhere.
+  rpc ReadSnapshot(ReadSnapshotRequest) returns (stream VolumeChunk);
+}
+
+message CreateSnapshotRequest {
+  string volume_id = 1;
+  string device_path = 2;
+  // Optional. Defaults to the volume's latest snapshot, if any.
+  string parent_snapshot_id = 3;
+}
+
+message SnapshotInfo {
+  string volume_id = 1;
+  string snapshot_id = 2;
+  string parent_snapshot_id = 3;
+  int64 created_at_ms = 4;
+  int64 volume_size_bytes = 5;
+  int32 block_size = 6;
+  int64 total_blocks = 7;
+  int64 changed_blocks = 8;  // differ from the parent at the same offset
+  int64 new_blocks = 9;      // content not already in the store: uploaded
+  int64 reused_blocks = 10;  // deduplicated against existing content
+  int64 zero_blocks = 11;    // all-zero blocks: recorded, never stored
+  int64 bytes_uploaded = 12;
+}
+
+// Stored per snapshot. block_hashes[i] is the SHA-256 (hex) of block i; "" means all zeros.
+message Manifest {
+  SnapshotInfo info = 1;
+  repeated string block_hashes = 2;
+}
+
+message ListSnapshotsRequest {
+  string volume_id = 1;
+}
+
+message ListSnapshotsResponse {
+  repeated SnapshotInfo snapshots = 1;  // oldest first
+}
+
+message RestoreVolumeRequest {
+  string volume_id = 1;
+  string snapshot_id = 2;
+  string target_path = 3;
+}
+
+message RestoreVolumeResponse {
+  int64 bytes_written = 1;
+  int64 blocks_fetched = 2;
+}
+
+message ReadSnapshotRequest {
+  string volume_id = 1;
+  string snapshot_id = 2;
+}
+
+message VolumeChunk {
+  int64 offset = 1;
+  bytes data = 2;      // empty when zero = true
+  bool zero = 3;       // a run of `length` zero bytes
+  int32 length = 4;
+}
